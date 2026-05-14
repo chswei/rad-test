@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv / local virtual environments
+.venv/
+
+# Local environment files
+.env
+.env.*
+.envrc
+
+# macOS
+.DS_Store
+
+# Local input PDFs and generated Anki packages
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep
+
+# Temporary extraction folders
+output/temp_images_for_*/
