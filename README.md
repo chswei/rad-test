@@ -1,6 +1,6 @@
 # 全國聯合考 PDF 轉 Anki 卡片工具
 
-這個專案可以把放在 `input/` 資料夾裡的全國聯合考 PDF，轉成 Anki 可以匯入的 `.apkg` 牌組檔。
+這個專案可以把放在 `input/` 資料夾裡的全國聯合考 PDF，轉成 Anki 可以匯入的 `.apkg` 牌組 。
 
 產生的卡片形式是：
 
@@ -87,12 +87,6 @@ uv --version
 例如資料夾可能會長這樣：
 
 ```text
-C:\Users\你的使用者名稱\Desktop\rad-test
-```
-
-也可能叫：
-
-```text
 C:\Users\你的使用者名稱\Desktop\rad-test-main
 ```
 
@@ -101,12 +95,6 @@ C:\Users\你的使用者名稱\Desktop\rad-test-main
 ### 2. 進入專案資料夾
 
 打開 Windows Terminal，確認目前是 PowerShell。
-
-如果你的資料夾叫 `rad-test`，請輸入：
-
-```powershell
-cd "$HOME\Desktop\rad-test"
-```
 
 如果你的資料夾叫 `rad-test-main`，請輸入：
 
@@ -175,10 +163,7 @@ rad-test/
 
 ### 4. 匯入 Anki
 
-1. 打開 Anki。
-2. 在 Anki 裡選擇「匯入檔案」，或直接把 `.apkg` 檔拖進 Anki 視窗。
-3. 選擇 `output/` 裡產生的 `.apkg` 檔。
-4. 匯入後就可以開始讀卡片。
+1. 點擊 `.apkg` 檔案，就會直接匯入 Anki。
 
 ## 資料夾說明
 
@@ -211,7 +196,7 @@ uv --version
 請先用 `cd` 回到專案資料夾，例如：
 
 ```powershell
-cd "$HOME\Desktop\rad-test"
+cd "$HOME\Desktop\rad-test-main"
 ```
 
 再執行：
