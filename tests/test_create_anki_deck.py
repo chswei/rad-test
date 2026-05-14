@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 
+from rich.console import Console
+
 import create_anki_deck as decker
 
 
@@ -65,7 +67,7 @@ def test_main_returns_failure_when_any_pdf_processing_fails(tmp_path, monkeypatc
     monkeypatch.setattr(
         decker,
         "process_pdf",
-        lambda pdf_path: decker.ProcessingResult(
+        lambda pdf_path, progress=None, task_id=None, step_task_ids=None, overall_task_id=None, progress_label=None, output_console=None: decker.ProcessingResult(
             deck_name="broken",
             output_file=str(output_dir / "broken.apkg"),
             num_cards=0,
@@ -80,3 +82,218 @@ def test_main_returns_failure_when_any_pdf_processing_fails(tmp_path, monkeypatc
     )
 
     assert decker.main() == 1
+
+
+def test_main_renders_summary_table_for_processed_pdfs(tmp_path, monkeypatch):
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "alpha.pdf").write_bytes(b"%PDF-1.4\n")
+    (input_dir / "beta.pdf").write_bytes(b"%PDF-1.4\n")
+
+    monkeypatch.setattr(decker, "INPUT_DIR", str(input_dir))
+    monkeypatch.setattr(decker, "OUTPUT_DIR", str(output_dir))
+    monkeypatch.setattr(
+        decker,
+        "process_pdf",
+        lambda pdf_path, progress=None, task_id=None, step_task_ids=None, overall_task_id=None, progress_label=None, output_console=None: decker.ProcessingResult(
+            deck_name=os.path.splitext(os.path.basename(pdf_path))[0],
+            output_file=str(output_dir / f"{os.path.splitext(os.path.basename(pdf_path))[0]}.apkg"),
+            num_cards=50,
+            report=decker.CardReport(
+                num_cards=50,
+                missing_answers=[],
+                missing_questions=[],
+                wrong_card_count=False,
+            ),
+            success=True,
+        ),
+    )
+
+    console = Console(record=True, force_terminal=True, width=120)
+
+    assert decker.main(console=console) == 0
+
+    output = console.export_text()
+    assert "全國聯合考PDF轉Anki卡片" in output
+    assert "處理結果" in output
+    assert "alpha" in output
+    assert "beta" in output
+    assert "50" in output
+    assert "成功" in output
+
+
+def test_process_pdf_renders_four_step_progress_rows(tmp_path, monkeypatch):
+    class FakeDoc:
+        def close(self):
+            pass
+
+    questions = {f"{num:02d}": f"q{num:02d}.png" for num in range(1, 51)}
+    answers = {f"{num:02d}": f"a{num:02d}.png" for num in range(1, 51)}
+
+    monkeypatch.setattr(decker, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(decker.fitz, "open", lambda pdf_path: FakeDoc())
+    monkeypatch.setattr(decker, "find_markers_and_regions", lambda doc: (questions, answers))
+    monkeypatch.setattr(
+        decker,
+        "extract_images",
+        lambda doc, regions, prefix, temp_dir, deck_name: (
+            {num: f"{deck_name}_{prefix}{num}.png" for num in regions},
+            [str(tmp_path / f"{deck_name}_{prefix}{num}.png") for num in regions],
+        ),
+    )
+    monkeypatch.setattr(decker, "create_anki_deck", lambda *args: 50)
+
+    console = Console(record=True, force_terminal=True, width=120)
+
+    with decker.build_progress(console) as progress:
+        step_tasks = decker.add_pdf_step_tasks(progress)
+        result = decker.process_pdf(
+            str(tmp_path / "sample.pdf"),
+            progress=progress,
+            step_task_ids=step_tasks,
+            output_console=console,
+        )
+
+    output = console.export_text()
+    assert result.success is True
+    assert "步驟 1/4: 定位問題與答案區域" in output
+    assert "找到 50 個問題和 50 個答案" in output
+    assert "步驟 2/4: 擷取問題圖片" in output
+    assert "成功處理 50 張問題圖片" in output
+    assert "步驟 3/4: 擷取答案圖片" in output
+    assert "成功處理 50 張答案圖片" in output
+    assert "步驟 4/4: 產生 Anki 卡片" in output
+    assert "成功建立 50 張卡片" in output
+    assert "sample | 完成 50 張卡片" not in output
+    assert "完成 步驟 1/4" not in output
+
+
+def test_process_pdf_advances_overall_progress_by_step(tmp_path, monkeypatch):
+    class FakeDoc:
+        def close(self):
+            pass
+
+    questions = {f"{num:02d}": f"q{num:02d}.png" for num in range(1, 51)}
+    answers = {f"{num:02d}": f"a{num:02d}.png" for num in range(1, 51)}
+
+    monkeypatch.setattr(decker, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(decker.fitz, "open", lambda pdf_path: FakeDoc())
+    monkeypatch.setattr(decker, "find_markers_and_regions", lambda doc: (questions, answers))
+    monkeypatch.setattr(
+        decker,
+        "extract_images",
+        lambda doc, regions, prefix, temp_dir, deck_name: (
+            {num: f"{deck_name}_{prefix}{num}.png" for num in regions},
+            [str(tmp_path / f"{deck_name}_{prefix}{num}.png") for num in regions],
+        ),
+    )
+    monkeypatch.setattr(decker, "create_anki_deck", lambda *args: 50)
+
+    console = Console(record=True, force_terminal=True, width=120)
+
+    with decker.build_progress(console) as progress:
+        overall_task = progress.add_task("整體進度", total=len(decker.PDF_STEPS))
+        step_tasks = decker.add_pdf_step_tasks(progress)
+        decker.process_pdf(
+            str(tmp_path / "sample.pdf"),
+            progress=progress,
+            step_task_ids=step_tasks,
+            overall_task_id=overall_task,
+            output_console=console,
+        )
+
+        overall = progress.tasks[0]
+        assert overall.completed == len(decker.PDF_STEPS)
+        assert overall.total == len(decker.PDF_STEPS)
+
+
+def test_progress_keeps_completed_step_rows_for_multiple_pdfs(tmp_path, monkeypatch):
+    class FakeDoc:
+        def close(self):
+            pass
+
+    questions = {f"{num:02d}": f"q{num:02d}.png" for num in range(1, 51)}
+    answers = {f"{num:02d}": f"a{num:02d}.png" for num in range(1, 51)}
+
+    monkeypatch.setattr(decker, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(decker.fitz, "open", lambda pdf_path: FakeDoc())
+    monkeypatch.setattr(decker, "find_markers_and_regions", lambda doc: (questions, answers))
+    monkeypatch.setattr(
+        decker,
+        "extract_images",
+        lambda doc, regions, prefix, temp_dir, deck_name: (
+            {num: f"{deck_name}_{prefix}{num}.png" for num in regions},
+            [str(tmp_path / f"{deck_name}_{prefix}{num}.png") for num in regions],
+        ),
+    )
+    monkeypatch.setattr(decker, "create_anki_deck", lambda *args: 50)
+
+    console = Console(record=True, force_terminal=True, width=160)
+
+    with decker.build_progress(console) as progress:
+        overall_task = progress.add_task("整體進度", total=2 * len(decker.PDF_STEPS))
+
+        alpha_steps = decker.add_pdf_step_tasks(progress, "alpha")
+        decker.process_pdf(
+            str(tmp_path / "alpha.pdf"),
+            progress=progress,
+            step_task_ids=alpha_steps,
+            overall_task_id=overall_task,
+            output_console=console,
+        )
+
+        beta_steps = decker.add_pdf_step_tasks(progress, "beta")
+        decker.process_pdf(
+            str(tmp_path / "beta.pdf"),
+            progress=progress,
+            step_task_ids=beta_steps,
+            overall_task_id=overall_task,
+            output_console=console,
+        )
+
+    output = console.export_text()
+    assert "alpha | 步驟 1/4: 定位問題與答案區域" in output
+    assert "alpha | 步驟 4/4: 產生 Anki 卡片" in output
+    assert "beta | 步驟 1/4: 定位問題與答案區域" in output
+    assert "beta | 步驟 4/4: 產生 Anki 卡片" in output
+
+
+def test_process_pdf_can_use_short_progress_label(tmp_path, monkeypatch):
+    class FakeDoc:
+        def close(self):
+            pass
+
+    questions = {f"{num:02d}": f"q{num:02d}.png" for num in range(1, 51)}
+    answers = {f"{num:02d}": f"a{num:02d}.png" for num in range(1, 51)}
+
+    monkeypatch.setattr(decker, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(decker.fitz, "open", lambda pdf_path: FakeDoc())
+    monkeypatch.setattr(decker, "find_markers_and_regions", lambda doc: (questions, answers))
+    monkeypatch.setattr(
+        decker,
+        "extract_images",
+        lambda doc, regions, prefix, temp_dir, deck_name: (
+            {num: f"{deck_name}_{prefix}{num}.png" for num in regions},
+            [str(tmp_path / f"{deck_name}_{prefix}{num}.png") for num in regions],
+        ),
+    )
+    monkeypatch.setattr(decker, "create_anki_deck", lambda *args: 50)
+
+    console = Console(record=True, force_terminal=True, width=160)
+
+    with decker.build_progress(console) as progress:
+        step_tasks = decker.add_pdf_step_tasks(progress, "檔案 1/2")
+        decker.process_pdf(
+            str(tmp_path / "very_long_pdf_name.pdf"),
+            progress=progress,
+            step_task_ids=step_tasks,
+            progress_label="檔案 1/2",
+            output_console=console,
+        )
+
+    output = console.export_text()
+    assert "檔案 1/2 | 步驟 1/4: 定位問題與答案區域" in output
+    assert "檔案 1/2 | 步驟 4/4: 產生 Anki 卡片" in output
+    assert "very_long_pdf_name | 步驟" not in output

@@ -136,7 +136,7 @@ rad-test/
 
 ### 2. 執行轉換
 
-回到 Windows Terminal，確認你還在專案資料夾裡，然後輸入：
+回到 Windows Terminal，確認你還**在專案資料夾裡 (非常重要)**，然後輸入：
 
 ```powershell
 uv run create_anki_deck.py

@@ -6,6 +6,7 @@ dependencies = [
     "genanki>=0.13.1",
     "pillow>=12.2.0",
     "pymupdf>=1.27.2.3",
+    "rich>=15.0.0",
 ]
 
 [tool.pytest.ini_options]

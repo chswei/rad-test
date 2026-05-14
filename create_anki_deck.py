@@ -9,12 +9,36 @@ import re
 import shutil
 import sys
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
+
 # --- 組態設定 ---
 INPUT_DIR = "input"
 OUTPUT_DIR = "output"
 ANKI_MODEL_NAME_PREFIX = "放射科閱片圖對圖模型"
 EXPECTED_CARDS = 50
 IMAGE_DPI = 200
+console = Console()
+
+STEP_FIND_REGIONS = "find_regions"
+STEP_QUESTION_IMAGES = "question_images"
+STEP_ANSWER_IMAGES = "answer_images"
+STEP_CREATE_DECK = "create_deck"
+PDF_STEPS = [
+    (STEP_FIND_REGIONS, "步驟 1/4: 定位問題與答案區域"),
+    (STEP_QUESTION_IMAGES, "步驟 2/4: 擷取問題圖片"),
+    (STEP_ANSWER_IMAGES, "步驟 3/4: 擷取答案圖片"),
+    (STEP_CREATE_DECK, "步驟 4/4: 產生 Anki 卡片"),
+]
 
 
 @dataclass
@@ -60,16 +84,93 @@ def build_card_report(question_images, answer_images, expected_cards=EXPECTED_CA
     )
 
 
-def print_card_report(report):
+def print_card_report(report, output_console=None):
+    output_console = output_console or console
     if report.missing_answers:
-        print(f"    > !!! 缺少答案的題號: {', '.join(report.missing_answers)}")
+        output_console.print(f"[bold red]缺少答案的題號:[/] {', '.join(report.missing_answers)}")
     if report.missing_questions:
-        print(f"    > !!! 缺少題目的答案編號: {', '.join(report.missing_questions)}")
+        output_console.print(f"[bold red]缺少題目的答案編號:[/] {', '.join(report.missing_questions)}")
     if report.wrong_card_count:
-        print(
-            f"    > !!! 警告: 最終產生的卡片數量為 {report.num_cards}，"
+        output_console.print(
+            f"[bold yellow]警告:[/] 最終產生的卡片數量為 {report.num_cards}，"
             f"不等於預期的 {EXPECTED_CARDS} 張。請檢查原檔案格式。"
         )
+
+
+def build_progress(console):
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
+
+
+def format_step_label(step_label, deck_name=None):
+    return f"{deck_name} | {step_label}" if deck_name else step_label
+
+
+def add_pdf_step_tasks(progress, deck_name=None):
+    return {
+        step_key: progress.add_task(format_step_label(step_label, deck_name), total=1)
+        for step_key, step_label in PDF_STEPS
+    }
+
+
+def reset_pdf_step_tasks(progress, step_task_ids, deck_name=None):
+    for step_key, step_label in PDF_STEPS:
+        progress.reset(
+            step_task_ids[step_key],
+            total=1,
+            completed=0,
+            description=format_step_label(step_label, deck_name),
+        )
+
+
+def update_overall_progress(progress, overall_task_id):
+    if not progress or overall_task_id is None:
+        return
+
+    progress.advance(overall_task_id)
+    task = next(task for task in progress.tasks if task.id == overall_task_id)
+    progress.update(
+        overall_task_id,
+        description=f"整體進度 | 已完成 {int(task.completed)}/{int(task.total)}",
+    )
+
+
+def complete_pdf_step(progress, step_task_ids, step_key, detail, overall_task_id=None, deck_name=None):
+    if not progress or not step_task_ids:
+        return
+
+    task_id = step_task_ids[step_key]
+    step_label = next(label for key, label in PDF_STEPS if key == step_key)
+    row_label = format_step_label(step_label, deck_name)
+    progress.update(
+        task_id,
+        description=f"{row_label} | {detail}",
+        completed=1,
+    )
+    update_overall_progress(progress, overall_task_id)
+
+
+def render_summary_table(results, output_console):
+    table = Table(title="處理結果", show_lines=True)
+    table.add_column("PDF", style="cyan", overflow="fold")
+    table.add_column("卡片數", justify="right")
+    table.add_column("狀態", justify="center")
+
+    for result in results:
+        status = "[green]成功[/]" if result.success else "[red]需檢查[/]"
+        table.add_row(
+            result.deck_name,
+            str(result.num_cards),
+            status,
+        )
+
+    output_console.print(table)
 
 
 def build_anki_model(deck_name):
@@ -240,11 +341,20 @@ def create_anki_deck(deck_name, anki_output_file, question_images, answer_images
     
     return len(my_deck.notes)
 
-def process_pdf(pdf_path):
+def process_pdf(
+    pdf_path,
+    progress=None,
+    task_id=None,
+    step_task_ids=None,
+    overall_task_id=None,
+    progress_label=None,
+    output_console=None,
+):
     """處理單一PDF檔案的完整流程。"""
-    print(f"\n--- 開始處理檔案: {os.path.basename(pdf_path)} ---")
+    output_console = output_console or console
     
     deck_name = os.path.basename(os.path.splitext(pdf_path)[0])
+    step_label_prefix = progress_label or deck_name
     anki_output_file = os.path.join(OUTPUT_DIR, deck_name + ".apkg")
     
     temp_dir = os.path.join(OUTPUT_DIR, f"temp_images_for_{deck_name}")
@@ -256,26 +366,68 @@ def process_pdf(pdf_path):
     try:
         doc = fitz.open(pdf_path)
         
-        print("  - 步驟 1/4: 定位問題與答案區域...")
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"{deck_name} | 定位問題與答案區域")
         q_regions, a_regions = find_markers_and_regions(doc)
-        print(f"    > 找到 {len(q_regions)} 個問題和 {len(a_regions)} 個答案。")
+        if progress and task_id is not None:
+            progress.advance(task_id)
+        complete_pdf_step(
+            progress,
+            step_task_ids,
+            STEP_FIND_REGIONS,
+            f"找到 {len(q_regions)} 個問題和 {len(a_regions)} 個答案。",
+            overall_task_id,
+            step_label_prefix,
+        )
 
-        print("  - 步驟 2/4: 擷取問題圖片...")
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"{deck_name} | 擷取問題圖片")
         question_images, q_media = extract_images(doc, q_regions, "Q", temp_dir, deck_name)
-        print(f"    > 成功處理 {len(question_images)} 張問題圖片。")
+        if progress and task_id is not None:
+            progress.advance(task_id)
+        complete_pdf_step(
+            progress,
+            step_task_ids,
+            STEP_QUESTION_IMAGES,
+            f"成功處理 {len(question_images)} 張問題圖片。",
+            overall_task_id,
+            step_label_prefix,
+        )
 
-        print("  - 步驟 3/4: 擷取答案圖片...")
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"{deck_name} | 擷取答案圖片")
         answer_images, a_media = extract_images(doc, a_regions, "A", temp_dir, deck_name)
-        print(f"    > 成功處理 {len(answer_images)} 張答案圖片。")
+        if progress and task_id is not None:
+            progress.advance(task_id)
+        complete_pdf_step(
+            progress,
+            step_task_ids,
+            STEP_ANSWER_IMAGES,
+            f"成功處理 {len(answer_images)} 張答案圖片。",
+            overall_task_id,
+            step_label_prefix,
+        )
         
-        print("  - 步驟 4/4: 產生 Anki 卡片...")
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"{deck_name} | 產生 Anki 卡片")
         all_media_files = q_media + a_media
         report = build_card_report(question_images, answer_images)
         num_cards = create_anki_deck(deck_name, anki_output_file, question_images, answer_images, all_media_files)
-        print(f"    > 成功建立 {num_cards} 張卡片。")
-        print_card_report(report)
+        if progress and task_id is not None:
+            progress.advance(task_id)
+            progress.update(
+                task_id,
+                description=f"{deck_name} | 完成 {num_cards} 張卡片",
+            )
+        complete_pdf_step(
+            progress,
+            step_task_ids,
+            STEP_CREATE_DECK,
+            f"成功建立 {num_cards} 張卡片。",
+            overall_task_id,
+            step_label_prefix,
+        )
 
-        print(f"--- 完成！已產生 Anki 檔案 '{anki_output_file}' ---")
         return ProcessingResult(
             deck_name=deck_name,
             output_file=anki_output_file,
@@ -285,7 +437,9 @@ def process_pdf(pdf_path):
         )
 
     except Exception as e:
-        print(f"處理 '{pdf_path}' 時發生嚴重錯誤: {e}")
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"{deck_name} | 處理失敗")
+        output_console.print(f"[bold red]處理 '{pdf_path}' 時發生嚴重錯誤:[/] {e}")
         report = CardReport(
             num_cards=0,
             missing_answers=[],
@@ -305,14 +459,15 @@ def process_pdf(pdf_path):
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 
-def main():
+def main(console=None):
     """主執行函數，負責遍歷資料夾並處理所有PDF。"""
-    print("--- Anki 批次處理腳本 (穩定 ID 模式 v8) ---")
+    output_console = console or globals()["console"]
+    output_console.print(Panel.fit("全國聯合考 PDF 轉 Anki 卡片", style="bold cyan"))
     
     if not os.path.exists(INPUT_DIR):
         os.makedirs(INPUT_DIR)
-        print(f"\n輸入資料夾 '{INPUT_DIR}' 已建立。")
-        print(f"請將要處理的 PDF 檔案放入該資料夾後，再重新執行一次。")
+        output_console.print(f"\n[bold yellow]輸入資料夾 '{INPUT_DIR}' 已建立。[/]")
+        output_console.print("請將要處理的 PDF 檔案放入該資料夾後，再重新執行一次。")
         return 1
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -320,14 +475,41 @@ def main():
     pdf_files = sorted(glob.glob(os.path.join(INPUT_DIR, '*.pdf')))
     
     if not pdf_files:
-        print(f"\n在 '{INPUT_DIR}' 中沒有找到任何 PDF 檔案。")
+        output_console.print(f"\n[bold yellow]在 '{INPUT_DIR}' 中沒有找到任何 PDF 檔案。[/]")
         return 1
         
-    print(f"\n在 '{INPUT_DIR}' 中找到 {len(pdf_files)} 個 PDF 檔案，準備開始處理...")
+    output_console.print(f"\n在 [bold]{INPUT_DIR}[/] 中找到 [bold cyan]{len(pdf_files)}[/] 個 PDF 檔案。")
 
-    results = [process_pdf(pdf_path) for pdf_path in pdf_files]
+    results = []
+    with build_progress(output_console) as progress:
+        total_steps = len(pdf_files) * len(PDF_STEPS)
+        overall_task = progress.add_task(f"整體進度 | 已完成 0/{total_steps}", total=total_steps)
+        for index, pdf_path in enumerate(pdf_files, start=1):
+            deck_name = os.path.basename(os.path.splitext(pdf_path)[0])
+            step_task_ids = add_pdf_step_tasks(progress, f"檔案 {index}/{len(pdf_files)}")
+            progress.update(overall_task, description=f"整體進度 | 正在處理 {deck_name}")
+            result = process_pdf(
+                pdf_path,
+                progress=progress,
+                step_task_ids=step_task_ids,
+                overall_task_id=overall_task,
+                progress_label=f"檔案 {index}/{len(pdf_files)}",
+                output_console=output_console,
+            )
+            results.append(result)
+            if not result.report.success:
+                progress.update(overall_task, description=f"整體進度 | {deck_name} 需檢查")
 
-    print(f"\n--- 全部處理完畢 ---")
+    output_console.print()
+    render_summary_table(results, output_console)
+    output_console.print(f"輸出資料夾: [bold]{OUTPUT_DIR}[/]")
+
+    failed_results = [result for result in results if not result.success]
+    for result in failed_results:
+        output_console.print(f"\n[bold yellow]{result.deck_name} 需要檢查:[/]")
+        print_card_report(result.report, output_console)
+
+    output_console.print("\n[bold green]全部處理完畢[/]" if not failed_results else "\n[bold yellow]全部處理完畢，部分檔案需要檢查[/]")
     return 0 if all(result.success for result in results) else 1
 
 if __name__ == "__main__":
