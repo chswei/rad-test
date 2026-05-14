@@ -55,6 +55,62 @@ def test_anki_card_back_shows_question_and_answer_images():
     assert template["afmt"].index("{{QuestionImage}}") < template["afmt"].index("{{AnswerImage}}")
 
 
+def test_extract_images_closes_source_images_after_merging(tmp_path, monkeypatch):
+    class FakeRect:
+        width = 100
+        height = 100
+        y0 = 0
+
+    class FakePixmap:
+        def save(self, path):
+            pass
+
+    class FakePage:
+        def get_pixmap(self, dpi, clip):
+            return FakePixmap()
+
+    class FakeDoc:
+        def __getitem__(self, page_index):
+            return FakePage()
+
+    class FakeImage:
+        size = (10, 10)
+
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeMergedImage:
+        def paste(self, image, position):
+            pass
+
+        def save(self, path):
+            pass
+
+    opened_images = []
+
+    def fake_open(path):
+        image = FakeImage()
+        opened_images.append(image)
+        return image
+
+    monkeypatch.setattr(decker.Image, "open", fake_open)
+    monkeypatch.setattr(decker.Image, "new", lambda *args: FakeMergedImage())
+
+    decker.extract_images(
+        FakeDoc(),
+        {"01": [(0, FakeRect()), (1, FakeRect())]},
+        "Q",
+        str(tmp_path),
+        "deck",
+    )
+
+    assert opened_images
+    assert all(image.closed for image in opened_images)
+
+
 def test_main_returns_failure_when_any_pdf_processing_fails(tmp_path, monkeypatch):
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
@@ -116,7 +172,7 @@ def test_main_renders_summary_table_for_processed_pdfs(tmp_path, monkeypatch):
     assert decker.main(console=console) == 0
 
     output = console.export_text()
-    assert "全國聯合考PDF轉Anki卡片" in output
+    assert "全國聯合考 PDF 轉 Anki 卡片" in output
     assert "處理結果" in output
     assert "alpha" in output
     assert "beta" in output
@@ -158,6 +214,7 @@ def test_process_pdf_renders_four_step_progress_rows(tmp_path, monkeypatch):
 
     output = console.export_text()
     assert result.success is True
+    assert "- sample | 步驟 1/4: 定位問題與答案區域" in output
     assert "步驟 1/4: 定位問題與答案區域" in output
     assert "找到 50 個問題和 50 個答案" in output
     assert "步驟 2/4: 擷取問題圖片" in output
@@ -168,6 +225,29 @@ def test_process_pdf_renders_four_step_progress_rows(tmp_path, monkeypatch):
     assert "成功建立 50 張卡片" in output
     assert "sample | 完成 50 張卡片" not in output
     assert "完成 步驟 1/4" not in output
+
+
+def test_summary_table_title_is_left_aligned():
+    console = Console(record=True, force_terminal=True, width=80)
+    report = decker.CardReport(
+        num_cards=50,
+        missing_answers=[],
+        missing_questions=[],
+        wrong_card_count=False,
+    )
+    result = decker.ProcessingResult(
+        deck_name="sample",
+        output_file="output/sample.apkg",
+        num_cards=50,
+        report=report,
+        success=True,
+    )
+
+    decker.render_summary_table([result], console)
+
+    output = console.export_text()
+    title_line = next(line for line in output.splitlines() if "處理結果" in line)
+    assert title_line.startswith("處理結果")
 
 
 def test_process_pdf_advances_overall_progress_by_step(tmp_path, monkeypatch):

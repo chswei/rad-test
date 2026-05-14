@@ -100,7 +100,7 @@ def print_card_report(report, output_console=None):
 def build_progress(console):
     return Progress(
         SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
+        TextColumn("[progress.description]- {task.description}"),
         BarColumn(),
         TaskProgressColumn(),
         TimeElapsedColumn(),
@@ -117,16 +117,6 @@ def add_pdf_step_tasks(progress, deck_name=None):
         step_key: progress.add_task(format_step_label(step_label, deck_name), total=1)
         for step_key, step_label in PDF_STEPS
     }
-
-
-def reset_pdf_step_tasks(progress, step_task_ids, deck_name=None):
-    for step_key, step_label in PDF_STEPS:
-        progress.reset(
-            step_task_ids[step_key],
-            total=1,
-            completed=0,
-            description=format_step_label(step_label, deck_name),
-        )
 
 
 def update_overall_progress(progress, overall_task_id):
@@ -157,7 +147,7 @@ def complete_pdf_step(progress, step_task_ids, step_key, detail, overall_task_id
 
 
 def render_summary_table(results, output_console):
-    table = Table(title="處理結果", show_lines=True)
+    table = Table(title="處理結果", title_justify="left", show_lines=True)
     table.add_column("PDF", style="cyan", overflow="fold")
     table.add_column("卡片數", justify="right")
     table.add_column("狀態", justify="center")
@@ -298,16 +288,21 @@ def extract_images(doc, regions_dict, prefix, temp_dir, deck_name):
         final_image_path = os.path.join(temp_dir, final_image_filename)
 
         if len(image_paths) > 1:
-            images = [Image.open(p) for p in image_paths]
-            widths, heights = zip(*(i.size for i in images))
-            total_height = sum(heights)
-            max_width = max(widths)
-            merged_image = Image.new('RGB', (max_width, total_height), 'white')
-            y_offset = 0
-            for im in images:
-                merged_image.paste(im, (0, y_offset))
-                y_offset += im.size[1]
-            merged_image.save(final_image_path)
+            images = []
+            try:
+                images = [Image.open(p) for p in image_paths]
+                widths, heights = zip(*(i.size for i in images))
+                total_height = sum(heights)
+                max_width = max(widths)
+                merged_image = Image.new('RGB', (max_width, total_height), 'white')
+                y_offset = 0
+                for im in images:
+                    merged_image.paste(im, (0, y_offset))
+                    y_offset += im.size[1]
+                merged_image.save(final_image_path)
+            finally:
+                for im in images:
+                    im.close()
         else:
             shutil.move(image_paths[0], final_image_path)
 
