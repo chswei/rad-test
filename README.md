@@ -87,7 +87,7 @@ C:\Users\你的使用者名稱\Desktop\rad-test-main
 - 點擊進入 `rad-test-main` 資料夾，裡面應該還會有一個 `rad-test-main` 資料夾，再次點擊進入，你應該會看到以下這些檔案
 
 ```text
-rad-test/
+rad-test-main/
   create_anki_deck.py   主要程式
   input/                放要轉換的 PDF
   output/               放產生的 .apkg Anki 牌組
