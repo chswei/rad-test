@@ -63,15 +63,7 @@ PowerShell 是我們要在 Windows Terminal 裡使用的指令環境。
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-安裝完成後，請關掉 Windows Terminal，再重新打開一次。
-
-重新打開後，輸入：
-
-```powershell
-uv --version
-```
-
-如果有看到類似 `uv 0.x.x` 的文字，就代表成功。
+安裝完成後，請關掉 Windows Terminal。
 
 ## 第一次使用：準備專案
 
@@ -90,37 +82,37 @@ uv --version
 C:\Users\你的使用者名稱\Desktop\rad-test-main
 ```
 
-實際名稱以你解壓縮後看到的資料夾名稱為準。
-
 ### 2. 進入專案資料夾
 
-打開 Windows Terminal，確認目前是 PowerShell。
+- 點擊進入 `rad-test-main` 資料夾，裡面應該還會有一個 `rad-test-main` 資料夾，再次點擊進入，你應該會看到以下這些檔案
 
-如果你的資料夾叫 `rad-test-main`，請輸入：
-
-```powershell
-cd "$HOME\Desktop\rad-test-main"
+```text
+rad-test/
+  create_anki_deck.py   主要程式
+  input/                放要轉換的 PDF
+  output/               放產生的 .apkg Anki 牌組
+  tests/                程式測試，一般使用者不用管
+  pyproject.toml        專案套件設定
+  uv.lock               鎖定套件版本，讓環境比較穩定
 ```
 
-你可以用這個指令確認目前資料夾裡有沒有專案檔案：
+在空白處按滑鼠右鍵，點擊 `在終端機開啟`，
 
-```powershell
-dir
-```
-
-如果有看到 `create_anki_deck.py`、`pyproject.toml`、`input`，就代表位置正確。
+- 終端機 (Windows Terminal) 會打開
+- 如果畫面上方的分頁顯示的是 `PowerShell`，就可以繼續。
+- 如果不是 PowerShell，按上方分頁旁邊的小箭頭，選 `PowerShell`。
 
 ### 3. 安裝專案需要的東西
 
-在專案資料夾裡輸入：
+在終端機輸入：
 
 ```powershell
 uv sync
 ```
 
-第一次會花一點時間，之後會快很多。
+這會下載一些必要套件，會花一點時間。至此，前置作業結束。
 
-## 每次要轉 PDF 時怎麼做
+## 之後每次要轉 PDF 時怎麼做
 
 ### 1. 把 PDF 放進 input 資料夾
 
@@ -136,7 +128,7 @@ rad-test/
 
 ### 2. 執行轉換
 
-回到 Windows Terminal，確認你還**在專案資料夾裡 (非常重要)**，然後輸入：
+**在專案資料夾裡 (非常重要)** 開啟終端機，然後輸入：
 
 ```powershell
 uv run create_anki_deck.py
