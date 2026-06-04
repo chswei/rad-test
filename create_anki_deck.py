@@ -212,17 +212,17 @@ def find_markers_and_regions(doc):
     q_regions = {}
     a_regions = {}
     pattern_suffix = r"(?:-\d+|\s*\(\d+(?:\/\d+)?\))?"
-    q_pattern = re.compile(r"^Q(\d{1,2})" + pattern_suffix + r"$", re.IGNORECASE)
-    a_pattern = re.compile(r"^A(\d{1,2})" + pattern_suffix + r"$", re.IGNORECASE)
+    q_pattern = re.compile(r"^Q(\d{1,3})" + pattern_suffix + r"$", re.IGNORECASE)
+    a_pattern = re.compile(r"^A(\d{1,3})" + pattern_suffix + r"$", re.IGNORECASE)
     # 特殊格式: 編號:xx
-    a_special_pattern = re.compile(r"編號[:：](\d{1,2})", re.IGNORECASE)
+    a_special_pattern = re.compile(r"編號[:：](\d{1,3})", re.IGNORECASE)
 
     for i, page in enumerate(doc):
         # 優先處理特殊答案格式
         text = page.get_text("text")
         a_special_match = a_special_pattern.search(text)
         if a_special_match:
-            num = a_special_match.group(1).zfill(2)
+            num = str(int(a_special_match.group(1))).zfill(2)
             if num not in a_regions:
                 a_regions[num] = []
             a_regions[num].append((i, page.rect))
@@ -238,10 +238,10 @@ def find_markers_and_regions(doc):
             a_match = a_pattern.match(text)
             
             if q_match:
-                num = q_match.group(1).zfill(2)
+                num = str(int(q_match.group(1))).zfill(2)
                 markers.append({'type': 'q', 'num': num, 'bbox': bbox})
             elif a_match:
-                num = a_match.group(1).zfill(2)
+                num = str(int(a_match.group(1))).zfill(2)
                 markers.append({'type': 'a', 'num': num, 'bbox': bbox})
 
         if not markers:

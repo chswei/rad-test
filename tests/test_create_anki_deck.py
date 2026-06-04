@@ -55,6 +55,33 @@ def test_anki_card_back_shows_question_and_answer_images():
     assert template["afmt"].index("{{QuestionImage}}") < template["afmt"].index("{{AnswerImage}}")
 
 
+def test_find_markers_accepts_three_digit_q_a_numbers_and_multipart_suffixes():
+    class FakePage:
+        rect = decker.fitz.Rect(0, 0, 100, 500)
+
+        def get_text(self, kind):
+            if kind == "text":
+                return ""
+            if kind == "words":
+                return [
+                    (0, 10, 20, 20, "Q015", 0, 0, 0),
+                    (0, 110, 20, 120, "A015", 0, 0, 1),
+                    (0, 210, 30, 220, "Q013(1/2)", 0, 0, 2),
+                    (0, 310, 30, 320, "Q013(2/2)", 0, 0, 3),
+                    (0, 410, 30, 420, "A013", 0, 0, 4),
+                ]
+            raise AssertionError(f"unexpected text kind: {kind}")
+
+    q_regions, a_regions = decker.find_markers_and_regions([FakePage()])
+
+    assert sorted(q_regions) == ["13", "15"]
+    assert sorted(a_regions) == ["13", "15"]
+    assert len(q_regions["13"]) == 2
+    assert len(q_regions["15"]) == 1
+    assert len(a_regions["13"]) == 1
+    assert len(a_regions["15"]) == 1
+
+
 def test_extract_images_closes_source_images_after_merging(tmp_path, monkeypatch):
     class FakeRect:
         width = 100
