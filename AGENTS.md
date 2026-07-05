@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents (Claude Code, Codex, etc.) when working with code in this repository.
 
 ## Project Overview
 
@@ -33,7 +33,4 @@ This is a radiology examination PDF to Anki flashcard converter. The main script
 
 ## Configuration
 
-- `EXPECTED_CARDS = 50`: Expected number of cards per deck (warns if mismatch)
-- `INPUT_DIR = "input"`: Source directory for PDF files
-- `OUTPUT_DIR = "output"`: Destination for generated Anki decks
-- Image DPI set to 200 for quality balance
+Configuration constants (expected card count, input/output directories, image DPI) are defined at the top of `create_anki_deck.py`. Check the code for current values rather than relying on this file.
