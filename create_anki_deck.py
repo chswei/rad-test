@@ -26,7 +26,11 @@ INPUT_DIR = "input"
 OUTPUT_DIR = "output"
 ANKI_MODEL_NAME_PREFIX = "放射科閱片圖對圖模型"
 EXPECTED_CARDS = 50
-IMAGE_DPI = 200
+# Anki 會依裝置大小縮放圖片；180 DPI 可在細節與檔案大小間取得平衡，
+# JPEG 則能大幅減少放射科影像相較於 PNG 所佔的容量。
+IMAGE_DPI = 180
+IMAGE_JPEG_QUALITY = 90
+IMAGE_EXTENSION = ".jpg"
 console = Console()
 
 STEP_FIND_REGIONS = "find_regions"
@@ -276,15 +280,18 @@ def extract_images(doc, regions_dict, prefix, temp_dir, deck_name):
             page = doc[page_index]
             pix = page.get_pixmap(dpi=IMAGE_DPI, clip=crop_box)
             # --- 修正: 使用 deck_name 作為前綴，確保檔名唯一 ---
-            temp_img_path = os.path.join(temp_dir, f"temp_{deck_name}_{prefix}{item_num}_{i}.png")
-            pix.save(temp_img_path)
+            temp_img_path = os.path.join(
+                temp_dir,
+                f"temp_{deck_name}_{prefix}{item_num}_{i}{IMAGE_EXTENSION}",
+            )
+            pix.save(temp_img_path, jpg_quality=IMAGE_JPEG_QUALITY)
             image_paths.append(temp_img_path)
 
         if not image_paths:
             continue
 
         # --- 修正: 最終檔名也包含唯一前綴 ---
-        final_image_filename = f"{deck_name}_{prefix}{item_num}.png"
+        final_image_filename = f"{deck_name}_{prefix}{item_num}{IMAGE_EXTENSION}"
         final_image_path = os.path.join(temp_dir, final_image_filename)
 
         if len(image_paths) > 1:
@@ -299,7 +306,12 @@ def extract_images(doc, regions_dict, prefix, temp_dir, deck_name):
                 for im in images:
                     merged_image.paste(im, (0, y_offset))
                     y_offset += im.size[1]
-                merged_image.save(final_image_path)
+                merged_image.save(
+                    final_image_path,
+                    format="JPEG",
+                    quality=IMAGE_JPEG_QUALITY,
+                    optimize=True,
+                )
             finally:
                 for im in images:
                     im.close()

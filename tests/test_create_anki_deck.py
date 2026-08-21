@@ -89,7 +89,7 @@ def test_extract_images_closes_source_images_after_merging(tmp_path, monkeypatch
         y0 = 0
 
     class FakePixmap:
-        def save(self, path):
+        def save(self, path, **kwargs):
             pass
 
     class FakePage:
@@ -113,7 +113,7 @@ def test_extract_images_closes_source_images_after_merging(tmp_path, monkeypatch
         def paste(self, image, position):
             pass
 
-        def save(self, path):
+        def save(self, path, **kwargs):
             pass
 
     opened_images = []
@@ -126,7 +126,7 @@ def test_extract_images_closes_source_images_after_merging(tmp_path, monkeypatch
     monkeypatch.setattr(decker.Image, "open", fake_open)
     monkeypatch.setattr(decker.Image, "new", lambda *args: FakeMergedImage())
 
-    decker.extract_images(
+    image_map, media_paths = decker.extract_images(
         FakeDoc(),
         {"01": [(0, FakeRect()), (1, FakeRect())]},
         "Q",
@@ -134,6 +134,8 @@ def test_extract_images_closes_source_images_after_merging(tmp_path, monkeypatch
         "deck",
     )
 
+    assert image_map == {"01": "deck_Q01.jpg"}
+    assert media_paths == [str(tmp_path / "deck_Q01.jpg")]
     assert opened_images
     assert all(image.closed for image in opened_images)
 
